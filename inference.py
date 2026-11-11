@@ -1,4 +1,4 @@
-"""Run a local LifeMate baseline against a split and its supplied ToolEnv."""
+"""Run local LifeMate inference against a split and its supplied ToolEnv."""
 
 import argparse
 import importlib
@@ -13,7 +13,7 @@ import sys
 import tempfile
 from time import monotonic
 
-from lifemate_models import LocalModels, remaining_seconds
+from models import LocalModels, remaining_seconds
 
 
 MISSING_INFO = "sys.ask_missing_info"

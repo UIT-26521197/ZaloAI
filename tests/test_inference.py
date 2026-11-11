@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 import wave
 
-import lifemate_baseline as baseline
+import inference
 
 
 TEST_ROOT = Path(__file__).resolve().parents[1]
@@ -55,7 +55,7 @@ class FakeModels:
 
     def transcribe(self, audio_path, deadline):
         assert audio_path.name == "train_0001.wav"
-        assert baseline.remaining_seconds(deadline) > 0
+        assert inference.remaining_seconds(deadline) > 0
         return "Bật đèn bếp"
 
     def next_action(self, messages, deadline):
@@ -65,7 +65,7 @@ class FakeModels:
         return action
 
 
-class BaselineTests(unittest.TestCase):
+class InferenceTests(unittest.TestCase):
     def test_replay_and_inference_write_same_hash_and_calls(self):
         with tempfile.TemporaryDirectory(dir=TEST_ROOT, prefix=".lifemate-test-") as temporary:
             root = Path(temporary)
@@ -73,7 +73,7 @@ class BaselineTests(unittest.TestCase):
             package = split / "zaic_tools"
             package.mkdir(parents=True)
             (package / "__init__.py").write_text(
-                "from test_baseline import FakeToolEnv as ToolEnv\n", encoding="utf-8",
+                "from test_inference import FakeToolEnv as ToolEnv\n", encoding="utf-8",
             )
             audio = split / "audio" / "train_0001" / "train_0001.wav"
             audio.parent.mkdir(parents=True)
@@ -100,15 +100,15 @@ class BaselineTests(unittest.TestCase):
             (split / "train_tools_catalog.json").write_text(json.dumps(catalog), encoding="utf-8")
             gold = root / "gold.jsonl"
             predicted = root / "predicted.jsonl"
-            cli = ["lifemate_baseline.py", "--data-root", str(root)]
+            cli = ["inference.py", "--data-root", str(root)]
             with patch.object(sys, "path", sys.path[:]), patch.dict(sys.modules):
                 with patch.object(sys, "argv", cli + ["--replay-gold", "--output", str(gold)]):
-                    baseline.main()
-                with patch.object(baseline, "LocalModels", FakeModels), patch.object(sys, "argv", cli + [
+                    inference.main()
+                with patch.object(inference, "LocalModels", FakeModels), patch.object(sys, "argv", cli + [
                     "--asr", str(root), "--llm", str(root),
                     "--gold-replay", str(gold), "--output", str(predicted),
                 ]):
-                    baseline.main()
+                    inference.main()
 
             self.assertEqual(predicted.read_text(encoding="utf-8"), gold.read_text(encoding="utf-8"))
             row = json.loads(predicted.read_text(encoding="utf-8"))
@@ -128,7 +128,7 @@ class BaselineTests(unittest.TestCase):
             split.mkdir()
             (split / "train.jsonl").touch()
             env = FakeToolEnv("train", "scope_test", temporary)
-            result = baseline.run_agent(
+            result = inference.run_agent(
                 env, StopModel(), {}, [], "Viết một bài thơ",
                 [{"name": "home.turn_on"}], 1, monotonic() + 30,
             )
@@ -145,4 +145,4 @@ class BaselineTests(unittest.TestCase):
             private.mkdir()
             (private / "state.json").touch()
             with self.assertRaises(FileNotFoundError):
-                baseline.audio_for({"audio_path": "../train_environment/state.json"}, audio_root)
+                inference.audio_for({"audio_path": "../train_environment/state.json"}, audio_root)
