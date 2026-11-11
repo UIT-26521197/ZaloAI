@@ -66,6 +66,41 @@ class FakeModels:
 
 
 class InferenceTests(unittest.TestCase):
+    def test_replay_resumes_from_last_checkpoint(self):
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT, prefix=".lifemate-test-") as temporary:
+            root = Path(temporary)
+            split = root / "train"
+            split.mkdir()
+            calls = [{"name": "home.turn_on", "arguments": {"id": "light_42"}}]
+            rows = [{"id": f"sample_{index}", "label": {"tool_calls": calls}}
+                    for index in (1, 2)]
+            (split / "train.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            output = root / "predictions.jsonl"
+            cli = ["inference.py", "--data-root", str(root), "--replay-gold",
+                   "--checkpoint-every", "1", "--output", str(output)]
+
+            class FailSecond(FakeToolEnv):
+                def call(self, name, arguments):
+                    if self.sample_id == "sample_2":
+                        raise RuntimeError("interrupted")
+                    return super().call(name, arguments)
+
+            with patch.object(inference, "load_tool_env", return_value=FailSecond):
+                with patch.object(sys, "argv", cli):
+                    with self.assertRaisesRegex(RuntimeError, "interrupted"):
+                        inference.main()
+            checkpoint = output.with_suffix(".jsonl.checkpoint")
+            self.assertEqual(len(list(inference.read_rows(checkpoint))), 1)
+
+            with patch.object(inference, "load_tool_env", return_value=FakeToolEnv):
+                with patch.object(sys, "argv", cli + ["--resume"]):
+                    inference.main()
+            self.assertEqual([row["id"] for row in inference.read_rows(output)],
+                             ["sample_1", "sample_2"])
+            metrics = json.loads(output.with_suffix(".metrics.json").read_text())
+            self.assertEqual(metrics["samples"], 2)
+
     def test_replay_and_inference_write_same_hash_and_calls(self):
         with tempfile.TemporaryDirectory(dir=TEST_ROOT, prefix=".lifemate-test-") as temporary:
             root = Path(temporary)
@@ -117,6 +152,13 @@ class InferenceTests(unittest.TestCase):
             metrics = json.loads(predicted.with_suffix(".metrics.json").read_text(encoding="utf-8"))
             self.assertEqual(metrics["state_hash_match_rate"], 1)
             self.assertEqual(metrics["statuses"], {"done": 1})
+            with patch.object(inference, "LocalModels", side_effect=AssertionError("model reloaded")):
+                with patch.object(sys, "argv", cli + [
+                    "--asr", str(root), "--llm", str(root),
+                    "--gold-replay", str(gold), "--output", str(predicted),
+                    "--resume",
+                ]):
+                    inference.main()
 
     def test_out_of_scope_does_not_call_tool(self):
         class StopModel:

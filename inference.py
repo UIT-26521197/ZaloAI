@@ -212,19 +212,63 @@ def run(args):
         {row["id"]: row["state_hash"] for row in read_rows(args.gold_replay)}
         if args.gold_replay else None
     )
-    catalog = models = None
-    if not args.replay_gold:
-        catalog = load_catalog(split_dir / f"{args.split}_tools_catalog.json")
-        models = LocalModels(args.llm, args.asr, args.device, args.seed)
-
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     with dataset.open(encoding="utf-8-sig") as manifest:
         available_samples = sum(bool(line.strip()) for line in manifest)
     sample_count = min(args.limit, available_samples) if args.limit is not None else available_samples
     rows = itertools.islice(read_rows(dataset), args.limit)
+    checkpoint = output.with_suffix(output.suffix + ".checkpoint")
+    metadata = output.with_suffix(output.suffix + ".checkpoint.meta.json")
+    signature = {
+        "dataset": str(dataset), "samples": sample_count,
+        "mode": "replay_gold" if args.replay_gold else "inference",
+        "llm": str(args.llm.resolve()) if args.llm else None,
+        "asr": str(args.asr.resolve()) if args.asr else None,
+        "gold_replay": str(args.gold_replay.resolve()) if args.gold_replay else None,
+        "seed": args.seed, "max_steps": args.max_steps,
+        "train_transcripts": args.train_transcripts,
+    }
     timings, statuses = [], {}
     hash_checks = hash_matches = calls_match = 0
+    processed = 0
+    if args.resume:
+        if not checkpoint.is_file() or not metadata.is_file():
+            raise FileNotFoundError(f"Resume requires {checkpoint} and {metadata}")
+        saved = json.loads(metadata.read_text(encoding="utf-8"))
+        if saved["signature"] != signature:
+            raise ValueError("Checkpoint settings or dataset differ from this run")
+        processed = saved["processed"]
+        timings = saved["timings"]
+        statuses = saved["statuses"]
+        hash_checks = saved["hash_checks"]
+        hash_matches = saved["hash_matches"]
+        calls_match = saved["calls_match"]
+        if len(timings) != processed or processed > sample_count:
+            raise ValueError("Invalid checkpoint metadata")
+
+    catalog = models = None
+    if not args.replay_gold and processed < sample_count:
+        catalog = load_catalog(split_dir / f"{args.split}_tools_catalog.json")
+        models = LocalModels(args.llm, args.asr, args.device, args.seed)
+
+    def save_checkpoint(stream, temporary):
+        stream.flush()
+        os.fsync(stream.fileno())
+        snapshot = checkpoint.with_suffix(checkpoint.suffix + ".tmp")
+        shutil.copyfile(temporary, snapshot)
+        os.replace(snapshot, checkpoint)
+        state = {
+            "signature": signature, "processed": len(timings),
+            "timings": timings, "statuses": statuses,
+            "hash_checks": hash_checks, "hash_matches": hash_matches,
+            "calls_match": calls_match,
+        }
+        state_tmp = metadata.with_suffix(metadata.suffix + ".tmp")
+        state_tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+        os.replace(state_tmp, metadata)
+        print(f"Checkpoint: {len(timings)}/{sample_count} -> {checkpoint}", flush=True)
+
     with tempfile.NamedTemporaryFile(
         mode="w", encoding="utf-8", newline="\n", dir=output.parent,
         prefix=f".{output.name}.", suffix=".tmp", delete=False,
@@ -232,6 +276,17 @@ def run(args):
         temporary = Path(stream.name)
         try:
             phase = "Replay" if args.replay_gold else "Inference"
+            if args.resume:
+                with checkpoint.open(encoding="utf-8") as source:
+                    for index in range(processed):
+                        line = source.readline()
+                        if not line:
+                            raise ValueError("Checkpoint has fewer rows than its metadata")
+                        sample = next(rows)
+                        if json.loads(line)["id"] != sample["id"]:
+                            raise ValueError(f"Checkpoint sample mismatch at row {index + 1}")
+                        stream.write(line)
+                print(f"Resuming {phase}: {processed}/{sample_count} samples complete", flush=True)
             for sample in rows:
                 started = monotonic()
                 deadline = started + 30
@@ -281,20 +336,15 @@ def run(args):
                         flush=True,
                     )
                 if completed % args.checkpoint_every == 0:
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                    checkpoint = output.with_suffix(output.suffix + ".checkpoint")
-                    snapshot = checkpoint.with_suffix(checkpoint.suffix + ".tmp")
-                    shutil.copyfile(temporary, snapshot)
-                    os.replace(snapshot, checkpoint)
-                    print(f"Checkpoint: {completed}/{sample_count} -> {checkpoint}", flush=True)
+                    save_checkpoint(stream, temporary)
             if not timings:
                 raise ValueError("No samples to process")
+            if len(timings) != sample_count:
+                raise ValueError(f"Processed {len(timings)}/{sample_count} samples")
+            if len(timings) % args.checkpoint_every:
+                save_checkpoint(stream, temporary)
             stream.close()
             os.replace(temporary, output)
-            checkpoint = output.with_suffix(output.suffix + ".checkpoint")
-            shutil.copyfile(output, checkpoint)
-            print(f"Final checkpoint: {checkpoint}", flush=True)
         finally:
             stream.close()
             temporary.unlink(missing_ok=True)
@@ -330,6 +380,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--progress-every", type=int, default=1)
     parser.add_argument("--checkpoint-every", type=int, default=25)
+    parser.add_argument("--resume", action="store_true", help="Continue from a matching checkpoint")
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument("--llm", type=Path, help="Local Qwen model directory")
     parser.add_argument("--asr", type=Path, help="Local PhoWhisper model directory")

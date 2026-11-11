@@ -26,3 +26,4 @@ zaic_tools/
 /.tools/
 /Đề ZAI.docx
 *.checkpoint
+*.checkpoint.meta.json

@@ -15,6 +15,7 @@ def main():
     parser.add_argument("--limit", type=int, help="Optional sample cap")
     parser.add_argument("--checkpoint-every", type=int, default=25,
                         help="Save partial prediction JSONL after this many samples")
+    parser.add_argument("--resume", action="store_true", help="Continue from matching checkpoints")
     args = parser.parse_args()
     if (args.limit is not None and args.limit < 1) or args.checkpoint_every < 1:
         parser.error("--limit and --checkpoint-every must be positive")
@@ -43,6 +44,8 @@ def main():
     if args.limit is not None:
         runner += ["--limit", str(args.limit)]
         suffix = f"-{args.limit}"
+    if args.resume:
+        runner.append("--resume")
 
     gold = args.runs_dir / f"gold-train{suffix}.jsonl"
     output = args.runs_dir / f"predictions-train{suffix}.jsonl"
