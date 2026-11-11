@@ -7,7 +7,8 @@ import json
 from pathlib import Path, PurePosixPath
 
 
-def prepare_baseline(drive_fs, repo, work, limit=10, chunk_mb=64):
+def prepare_baseline(drive_fs, repo, work, limit=10, chunk_mb=64, progress=None):
+    report = progress or (lambda message: print(message, flush=True))
     repo, work = Path(repo), Path(work)
     train, models = work / "data" / "train", work / "models"
     if not (repo / "evaluate.py").is_file():
@@ -21,14 +22,14 @@ def prepare_baseline(drive_fs, repo, work, limit=10, chunk_mb=64):
         local.parent.mkdir(parents=True, exist_ok=True)
         size = int(drive_fs.info(remote)["size"])
         if local.is_file() and local.stat().st_size == size:
-            print(f"Cached {remote} ({size / 1024**2:.1f} MiB)", flush=True)
+            report(f"Cached {remote} ({size / 1024**2:.1f} MiB)")
             return
         part = local.with_name(local.name + ".part")
         copied = part.stat().st_size if part.exists() else 0
         if copied > size:
             part.unlink()
             copied = 0
-        print(f"Download {remote}: {copied / 1024**2:.1f}/{size / 1024**2:.1f} MiB", flush=True)
+        report(f"Download {remote}: {copied / 1024**2:.1f}/{size / 1024**2:.1f} MiB")
         with drive_fs.open(remote, "rb") as source, part.open("ab") as target:
             if copied:
                 source.seek(copied)
@@ -40,7 +41,9 @@ def prepare_baseline(drive_fs, repo, work, limit=10, chunk_mb=64):
                 target.write(block)
                 copied += len(block)
                 if copied >= next_report or copied == size:
-                    print(f"  {local.name}: {copied / 1024**2:.1f}/{size / 1024**2:.1f} MiB ({copied / size:.0%})", flush=True)
+                    filled = round(24 * copied / size)
+                    report(f"  {local.name}: [{'#' * filled}{'-' * (24 - filled)}] "
+                           f"{copied / 1024**2:.1f}/{size / 1024**2:.1f} MiB ({copied / size:.0%})")
                     next_report = copied + step
         part.replace(local)
 
@@ -51,13 +54,13 @@ def prepare_baseline(drive_fs, repo, work, limit=10, chunk_mb=64):
                  and not path.endswith((".pyc", ".lock", ".metadata", ".DS_Store"))]
         if not paths:
             raise FileNotFoundError(remote)
-        print(f"Stage {remote}: {len(paths)} files", flush=True)
+        report(f"Stage {remote}: {len(paths)} files")
         for i, path in enumerate(paths, 1):
             relative = PurePosixPath(path).relative_to(root)
-            print(f"File {i}/{len(paths)}", flush=True)
+            report(f"File {i}/{len(paths)}")
             download(path, local.joinpath(*relative.parts))
 
-    print("Stage 1/4: manifests and tools", flush=True)
+    report("Stage 1/4: manifests and tools")
     download("ZAI/data/train/train.jsonl", train / "train.jsonl")
     download("ZAI/data/train/train_tools_catalog.json", train / "train_tools_catalog.json")
     if not (train / "zaic_tools" / "__init__.py").is_file():
@@ -73,13 +76,13 @@ def prepare_baseline(drive_fs, repo, work, limit=10, chunk_mb=64):
     if len(samples) != limit:
         raise ValueError(f"Only {len(samples)} train rows available, requested {limit}")
 
-    print(f"Stage 2/4: {limit} sample environments", flush=True)
+    report(f"Stage 2/4: {limit} sample environments")
     for i, sample in enumerate(samples, 1):
         sample_id = sample["id"]
         target = train / "train_environment" / sample_id
         if not target.is_dir() or not any(target.iterdir()):
             folder(f"ZAI/data/train/train_environment/{sample_id}", target)
-        print(f"Environment {i}/{limit}: {sample_id}", flush=True)
+        report(f"Environment {i}/{limit}: {sample_id}")
 
     audio_paths = set()
     for sample in samples:
@@ -91,12 +94,12 @@ def prepare_baseline(drive_fs, repo, work, limit=10, chunk_mb=64):
                 path = path.get("path")
             if isinstance(path, str):
                 audio_paths.add(path)
-    print(f"Stage 3/4: {len(audio_paths)} audio files", flush=True)
+    report(f"Stage 3/4: {len(audio_paths)} audio files")
     for i, path in enumerate(sorted(audio_paths), 1):
-        print(f"Audio {i}/{len(audio_paths)}", flush=True)
+        report(f"Audio {i}/{len(audio_paths)}")
         download(f"ZAI/data/train/{path}", train / path)
 
-    print("Stage 4/4: pretrained models", flush=True)
+    report("Stage 4/4: pretrained models")
     for name in ("PhoWhisper-medium", "Qwen3-4B-Instruct-2507"):
         folder(f"ZAI/models/{name}", models / name)
     return {"repo": repo, "work": work, "train": train, "models": models,
