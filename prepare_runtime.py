@@ -63,8 +63,9 @@ def prepare_baseline(drive_fs, repo, work, limit=10, chunk_mb=64, progress=None)
     report("Stage 1/4: manifests and tools")
     download("ZAI/data/train/train.jsonl", train / "train.jsonl")
     download("ZAI/data/train/train_tools_catalog.json", train / "train_tools_catalog.json")
-    if not (train / "zaic_tools" / "__init__.py").is_file():
-        folder("ZAI/data/train/zaic_tools", train / "zaic_tools")
+    # A previous interrupted transfer may leave only __init__.py behind.
+    # Always enumerate the package and let download() skip complete files.
+    folder("ZAI/data/train/zaic_tools", train / "zaic_tools")
 
     samples = []
     with (train / "train.jsonl").open(encoding="utf-8-sig") as manifest:
