@@ -1,0 +1,2 @@
+# Use the PyTorch >=2.6 build supplied by the Colab GPU runtime.
+transformers==4.57.6
