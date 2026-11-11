@@ -14,7 +14,26 @@ Smoke test dùng ToolEnv và câu trả lời LLM giả lập. Nó kiểm tra l�
 
 ## Chạy trên Colab
 
-Chạy cell khởi tạo Drive và GPU trước để có `DATA_DIR`, `MODELS_DIR`, `RUNS_DIR`, `WORK_DIR` và `REPO_DIR`. Dùng Python và PyTorch GPU có sẵn trong Colab. PhoWhisper-medium phát hành trọng số dạng PyTorch `.bin`, cần PyTorch 2.6 trở lên với phiên bản Transformers đã ghim.
+Mở `LifeMate_Colab.ipynb`, chọn GPU và bấm **Run all** để mount Drive, đồng bộ code từ GitHub và cài thư viện. Notebook dùng `MyDrive/ZAI/data`, `MyDrive/ZAI/models` và `MyDrive/ZAI/runs`.
+
+### Lượt baseline đầu tiên trên train
+
+Sau khi setup xong, thêm và chạy cell sau để replay nhãn rồi đánh giá baseline trên cùng các mẫu `train`.
+
+```python
+subprocess.run([
+    sys.executable, str(REPO_DIR / "run_train_baseline.py"),
+    "--data-root", str(DATA_DIR),
+    "--models-dir", str(MODELS_DIR),
+    "--runs-dir", str(RUNS_DIR),
+], check=True)
+```
+
+Lệnh chạy toàn bộ `train`. Thêm `"--limit", "10"` vào danh sách đối số nếu muốn thử nhanh 10 mẫu. File `baseline-train.metrics.json` trong `runs/` ghi tỷ lệ khớp chuỗi tool calls, tỷ lệ khớp hash và độ trễ. Lượt chạy giới hạn thêm số mẫu vào tên các file.
+
+### Chạy runner trực tiếp
+
+Dùng Python và PyTorch GPU có sẵn trong Colab. PhoWhisper-medium phát hành trọng số dạng PyTorch `.bin`, cần PyTorch 2.6 trở lên với phiên bản Transformers đã ghim.
 
 ### Lấy code và cài thư viện
 
@@ -40,7 +59,7 @@ Nếu repo đặt private, xác thực GitHub trong Colab trước khi clone. Kh
 Chép hoặc giải nén devkit từ Drive vào ổ Colab. Đặt `DEVKIT` ở thư mục trực tiếp chứa `train/` và `public_test/`. Trong từng split, runner dùng manifest `<split>.jsonl`, catalog `<split>_tools_catalog.json`, `audio/` và package `zaic_tools/` tương ứng. Dữ liệu và model nằm trên Drive hoặc ổ Colab. Git lưu source và cấu hình.
 
 ```python
-DEVKIT = WORK_DIR / "train+public_test"  # Sửa theo thư mục đã giải nén.
+DEVKIT = DATA_DIR  # Hoặc thư mục chứa hai split trên ổ Colab.
 ASR = MODELS_DIR / "PhoWhisper-medium"
 LLM = MODELS_DIR / "Qwen3-4B-Instruct-2507"
 

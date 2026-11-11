@@ -262,7 +262,7 @@ def run(args):
                         hash_matches += prediction["state_hash"] == gold_hash
                 stream.write(compact_json(prediction) + "\n")
                 if len(timings) % 10 == 0:
-                    print(f"{len(timings)} mẫu, {statuses}", flush=True)
+                    print(f"{len(timings)} samples, {statuses}", flush=True)
             if not timings:
                 raise ValueError("No samples to process")
             stream.close()
