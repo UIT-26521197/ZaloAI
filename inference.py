@@ -8,6 +8,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
 import statistics
 import sys
 import tempfile
@@ -47,7 +48,7 @@ def load_catalog(path):
 
     if isinstance(catalog, dict) and "apps" in catalog:
         entries = [
-            {"app": app["name"], **tool}
+            {"app": app.get("name", app.get("id")), **tool}
             for app in records(catalog["apps"], "apps")
             for tool in records(app["tools"], "tools")
         ]
@@ -269,19 +270,31 @@ def run(args):
                         hash_matches += prediction["state_hash"] == gold_hash
                 stream.write(compact_json(prediction) + "\n")
                 completed = len(timings)
-                filled = round(30 * completed / sample_count)
-                bar = "#" * filled + "-" * (30 - filled)
-                print(
-                    f"\r{phase} [{bar}] {completed}/{sample_count} "
-                    f"({100 * completed / sample_count:.0f}%) "
-                    f"timeout={statuses.get('timeout', 0)}",
-                    end="\n" if completed == sample_count else "",
-                    flush=True,
-                )
+                if completed % args.progress_every == 0 or completed == sample_count:
+                    filled = round(30 * completed / sample_count)
+                    bar = "#" * filled + "-" * (30 - filled)
+                    print(
+                        f"{phase} [{bar}] {completed}/{sample_count} "
+                        f"({100 * completed / sample_count:.0f}%) "
+                        f"timeout={statuses.get('timeout', 0)} "
+                        f"last={elapsed:.1f}s",
+                        flush=True,
+                    )
+                if completed % args.checkpoint_every == 0:
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                    checkpoint = output.with_suffix(output.suffix + ".checkpoint")
+                    snapshot = checkpoint.with_suffix(checkpoint.suffix + ".tmp")
+                    shutil.copyfile(temporary, snapshot)
+                    os.replace(snapshot, checkpoint)
+                    print(f"Checkpoint: {completed}/{sample_count} -> {checkpoint}", flush=True)
             if not timings:
                 raise ValueError("No samples to process")
             stream.close()
             os.replace(temporary, output)
+            checkpoint = output.with_suffix(output.suffix + ".checkpoint")
+            shutil.copyfile(output, checkpoint)
+            print(f"Final checkpoint: {checkpoint}", flush=True)
         finally:
             stream.close()
             temporary.unlink(missing_ok=True)
@@ -315,6 +328,8 @@ def main():
     parser.add_argument("--limit", type=int)
     parser.add_argument("--max-steps", type=int, default=8)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--progress-every", type=int, default=1)
+    parser.add_argument("--checkpoint-every", type=int, default=25)
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument("--llm", type=Path, help="Local Qwen model directory")
     parser.add_argument("--asr", type=Path, help="Local PhoWhisper model directory")
@@ -323,8 +338,8 @@ def main():
     modes.add_argument("--replay-gold", action="store_true", help="Replay labelled train calls without GPU")
     modes.add_argument("--train-transcripts", action="store_true", help="Diagnostic using train audio_text")
     args = parser.parse_args()
-    if args.max_steps <= 0 or (args.limit is not None and args.limit <= 0):
-        parser.error("--max-steps and --limit must be positive")
+    if min(args.max_steps, args.progress_every, args.checkpoint_every) <= 0 or (args.limit is not None and args.limit <= 0):
+        parser.error("--max-steps, --progress-every, --checkpoint-every and --limit must be positive")
     if (args.replay_gold or args.train_transcripts) and args.split != "train":
         parser.error("Gold calls and transcripts are restricted to the train split")
     if args.gold_replay and (args.split != "train" or args.replay_gold):

@@ -23,3 +23,6 @@ zaic_tools/
 *.safetensors
 *.bin
 *.pt
+/.tools/
+/Đề ZAI.docx
+*.checkpoint
