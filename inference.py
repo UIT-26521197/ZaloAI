@@ -13,7 +13,9 @@ import sys
 import tempfile
 from time import monotonic
 
-
+# Some hosted notebook runtimes start Python with safe-path mode, which omits
+# the script's directory from sys.path even when this file is run directly.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lifemate_models import LocalModels, remaining_seconds
 
 
