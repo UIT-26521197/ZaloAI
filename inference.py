@@ -13,6 +13,7 @@ import sys
 import tempfile
 from time import monotonic
 
+
 from models import LocalModels, remaining_seconds
 
 
@@ -215,6 +216,9 @@ def run(args):
 
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
+    with dataset.open(encoding="utf-8-sig") as manifest:
+        available_samples = sum(bool(line.strip()) for line in manifest)
+    sample_count = min(args.limit, available_samples) if args.limit is not None else available_samples
     rows = itertools.islice(read_rows(dataset), args.limit)
     timings, statuses = [], {}
     hash_checks = hash_matches = calls_match = 0
@@ -224,6 +228,7 @@ def run(args):
     ) as stream:
         temporary = Path(stream.name)
         try:
+            phase = "Replay" if args.replay_gold else "Inference"
             for sample in rows:
                 started = monotonic()
                 deadline = started + 30
@@ -261,8 +266,16 @@ def run(args):
                         hash_checks += 1
                         hash_matches += prediction["state_hash"] == gold_hash
                 stream.write(compact_json(prediction) + "\n")
-                if len(timings) % 10 == 0:
-                    print(f"{len(timings)} samples, {statuses}", flush=True)
+                completed = len(timings)
+                filled = round(30 * completed / sample_count)
+                bar = "#" * filled + "-" * (30 - filled)
+                print(
+                    f"\r{phase} [{bar}] {completed}/{sample_count} "
+                    f"({100 * completed / sample_count:.0f}%) "
+                    f"timeout={statuses.get('timeout', 0)}",
+                    end="\n" if completed == sample_count else "",
+                    flush=True,
+                )
             if not timings:
                 raise ValueError("No samples to process")
             stream.close()
