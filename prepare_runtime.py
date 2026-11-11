@@ -49,9 +49,21 @@ def prepare_baseline(drive_fs, repo, work, limit=10, chunk_mb=64, progress=None)
 
     def folder(remote, local):
         root = PurePosixPath(remote)
-        paths = [path for path in drive_fs.find(remote) if drive_fs.isfile(path)
-                 and not any(piece in {".cache", "__pycache__"} for piece in PurePosixPath(path).parts)
-                 and not path.endswith((".pyc", ".lock", ".metadata", ".DS_Store"))]
+        paths = []
+        pending = [remote]
+        while pending:
+            current = pending.pop()
+            for item in drive_fs.ls(current, detail=True):
+                path = item["name"]
+                name = PurePosixPath(path).name
+                if name in {".cache", "__pycache__"} or name.endswith(
+                    (".pyc", ".lock", ".metadata", ".DS_Store")
+                ):
+                    continue
+                if item["type"] == "directory":
+                    pending.append(path)
+                elif item["type"] == "file":
+                    paths.append(path)
         if not paths:
             raise FileNotFoundError(remote)
         report(f"Stage {remote}: {len(paths)} files")
