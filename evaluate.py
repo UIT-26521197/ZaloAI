@@ -13,9 +13,11 @@ def main():
     parser.add_argument("--models-dir", type=Path, required=True)
     parser.add_argument("--runs-dir", type=Path, required=True)
     parser.add_argument("--limit", type=int, help="Optional sample cap")
+    parser.add_argument("--checkpoint-every", type=int, default=25,
+                        help="Save partial prediction JSONL after this many samples")
     args = parser.parse_args()
-    if args.limit is not None and args.limit < 1:
-        parser.error("--limit must be positive")
+    if (args.limit is not None and args.limit < 1) or args.checkpoint_every < 1:
+        parser.error("--limit and --checkpoint-every must be positive")
 
     split_dir = args.data_root / "train"
     for path in (
@@ -35,6 +37,7 @@ def main():
     runner = [
         sys.executable, "-u", str(Path(__file__).with_name("inference.py")),
         "--data-root", str(args.data_root), "--split", "train",
+        "--checkpoint-every", str(args.checkpoint_every),
     ]
     suffix = ""
     if args.limit is not None:
