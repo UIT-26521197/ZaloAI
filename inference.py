@@ -14,7 +14,7 @@ import tempfile
 from time import monotonic
 
 
-from models import LocalModels, remaining_seconds
+from lifemate_models import LocalModels, remaining_seconds
 
 
 MISSING_INFO = "sys.ask_missing_info"
