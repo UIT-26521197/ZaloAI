@@ -1,6 +1,6 @@
 # LifeMate với PhoWhisper, Laya và Qwen
 
-`project/` chứa codebase độc lập. Chạy các lệnh từ thư mục này. Baseline và inference dùng cùng `src/core/pipeline.py`; mỗi mẫu mở một ToolEnv của bộ dữ liệu.
+`ZAI/src/` chứa codebase độc lập. Chạy các lệnh từ thư mục này. Baseline và inference dùng chung pipeline trong package Python `src`, và mỗi mẫu mở một ToolEnv của bộ dữ liệu.
 
 1. PhoWhisper-medium chuyển âm thanh tiếng Việt thành transcript.
 2. Laya multilingual chọn hướng gọi trực tiếp, tra cứu, hỏi lại hoặc xử lý chung. Nếu độ tin cậy thấp, pipeline chuyển hướng xử lý chung cho Qwen.
@@ -19,7 +19,8 @@ Bố trí thư mục Drive:
 
 ```text
 ZAI/
-├── project/                           # thư mục code này
+├── src/                               # thư mục chạy lệnh
+│   └── src/                           # package Python
 ├── data/
 │   ├── train/
 │   │   ├── train.jsonl
