@@ -1,0 +1,16 @@
+split: public_test
+data_root: data
+output: result
+whisper: models/PhoWhisper-medium
+laya: models/laya-multilingual
+qwen: models/Qwen3-4B-Instruct-2507
+qwen_adapter: null
+device: auto
+laya_device: cpu
+offline: true
+seed: 42
+route_threshold: 0.6
+max_steps: 10
+max_seconds: 28
+context_tokens: 16384
+new_tokens: 384
