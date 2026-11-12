@@ -5,7 +5,10 @@ from pathlib import Path
 class ToolRegistry:
     def __init__(self, catalog: dict):
         self.apps = {}
-        for app_name, app in catalog["apps"].items():
+        apps = catalog["apps"]
+        if isinstance(apps, list):
+            apps = {app["id"]: app for app in apps}
+        for app_name, app in apps.items():
             tools = []
             for item in app["tools"]:
                 tool = item.get("function", item)
